@@ -1,0 +1,6 @@
+{
+  "name": "ClearCast Studio",
+  "description": "Broadcast-grade voice cleanup, automatic noise reduction, loudness leveling, batch video/audio processing up to 75 minutes, customizable WAV and MP3 export, and Google Drive cloud sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
