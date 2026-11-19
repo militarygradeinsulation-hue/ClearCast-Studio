@@ -1312,6 +1312,18 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '10mb' }));
 
+  // Production processor calls originate from the authenticated Creative Studio
+  // backend. A shared secret protects media ingestion, jobs, exports and AI APIs.
+  // Keep health public for hosting readiness checks.
+  app.use('/api', (req, res, next) => {
+    if (req.path === '/health') return next();
+    const key = process.env.CLEARCAST_PROCESSOR_KEY;
+    if (key && req.header('x-clearcast-processor-key') !== key) {
+      return res.status(401).json({ error: 'ClearCast processor authorization required.' });
+    }
+    next();
+  });
+
   app.get('/api/health', (_req, res) => {
     const ffmpeg = spawnSync(FFMPEG_BIN, ['-version'], { timeout: 5000, stdio: 'ignore' });
     const ffprobe = spawnSync(FFPROBE_BIN, ['-version'], { timeout: 5000, stdio: 'ignore' });
