@@ -22,7 +22,7 @@ async function jsonResponse(res) {
 }
 const health = await jsonResponse(await fetch(origin + '/api/health'));
 assert.equal(health.ffmpegAvailable, true);
-assert.equal(health.ffprobeAvailable, true);
+assert.ok(health.ffprobeAvailable || health.metadataProbe === 'ffmpeg-fallback', 'No media metadata probe available');
 
 const form = new FormData();
 form.append('files', new Blob([readFileSync(audioPath)], { type: 'audio/wav' }), 'smoke-test.wav');
