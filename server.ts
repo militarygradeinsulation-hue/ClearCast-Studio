@@ -1547,7 +1547,7 @@ async function startServer() {
       targetLufs: Number.isFinite(Number(body.targetLufs)) ? Number(body.targetLufs) : -16,
       highPassHz: Number.isFinite(Number(body.highPassHz)) ? Number(body.highPassHz) : 80,
       neuralDenoise: Boolean(body.neuralDenoise ?? true),
-      aiVoiceListener: Boolean(body.aiVoiceListener ?? true),
+      aiVoiceListener: Boolean(body.aiVoiceListener ?? false),
       deEsser: Boolean(body.deEsser ?? true),
       deClick: Boolean(body.deClick ?? false),
     };

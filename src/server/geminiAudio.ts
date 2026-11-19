@@ -86,12 +86,23 @@ function getGeminiClient(): GoogleGenAI {
 
 function isQuotaOrRateLimitError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return msg.includes('RESOURCE_EXHAUSTED') || msg.includes('429') || msg.includes('503');
+  return (
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    msg.includes('429') ||
+    msg.includes('503') ||
+    msg.includes('402') ||
+    msg.includes('prepayment credits are depleted')
+  );
 }
 
 function formatGeminiError(err: unknown): Error {
   const message = err instanceof Error ? err.message : String(err);
   console.error('[ClearCast GeminiAudio]', message.slice(0, 400));
+  if (message.includes('402') || message.includes('prepayment credits are depleted')) {
+    return new Error(
+      'Your AI Studio prepayment credits are depleted (402). Please go to AI Studio at https://ai.studio/projects to add billing credits or manage your project. Local neural noise reduction and EQ mastering continue to work normally.'
+    );
+  }
   if (message.includes('API_KEY_INVALID') || message.includes('403') || message.includes('PERMISSION_DENIED')) {
     return new Error(
       'Gemini API key permission error. Please check your API key in Settings > Secrets.'
