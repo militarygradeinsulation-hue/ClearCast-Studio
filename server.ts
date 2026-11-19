@@ -31,6 +31,8 @@ fs.mkdirSync(JOBS_DIR, { recursive: true });
 const MODELS_DIR = path.resolve(process.cwd(), 'models');
 const RNNOISE_SH_MODEL = path.join(MODELS_DIR, 'rnnoise_sh.rnnn');
 const RNNOISE_CB_MODEL = path.join(MODELS_DIR, 'rnnoise_cb.rnnn');
+const FFMPEG_BIN = process.env.FFMPEG_PATH || 'ffmpeg';
+const FFPROBE_BIN = process.env.FFPROBE_PATH || 'ffprobe';
 
 type AiVoiceBlendMode = 'clarity-blend' | 'balanced-hybrid' | 'full-revoice';
 
@@ -226,40 +228,84 @@ interface ProbeResult {
 }
 
 function probeMediaFile(filePath: string): Promise<ProbeResult> {
+  const probeWithFfmpeg = (): Promise<ProbeResult> => new Promise((resolve, reject) => {
+    // Inspect zero seconds of media output to read its input stream metadata.
+    const proc = spawn(FFMPEG_BIN, ['-hide_banner', '-i', filePath, '-t', '0', '-f', 'null', '-']);
+    let output = '';
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    proc.stderr.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.length > 256000) output = output.slice(-256000);
+    });
+    proc.on('error', (err: NodeJS.ErrnoException) => {
+      fail(new Error(err.code === 'ENOENT'
+        ? 'FFmpeg is missing from the audio server. Install FFmpeg or set FFMPEG_PATH.'
+        : 'Could not start FFmpeg metadata fallback: ' + err.message));
+    });
+    proc.on('close', () => {
+      if (settled) return;
+      const durationMatch = output.match(/Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/);
+      const audioLine = output.split('\n').find(line => /Stream #\d+:\d+.*Audio:/.test(line));
+      const videoLine = output.split('\n').find(line => /Stream #\d+:\d+.*Video:/.test(line));
+      if (!audioLine || !durationMatch) {
+        fail(new Error('FFmpeg could not find a supported audio stream with a known duration. ' +
+          output.slice(-500)));
+        return;
+      }
+      const durationSeconds = Number(durationMatch[1]) * 3600 +
+        Number(durationMatch[2]) * 60 + Number(durationMatch[3]);
+      const codec = audioLine.match(/Audio:\s*([a-zA-Z0-9_]+)/)?.[1] || 'unknown';
+      const sampleRate = Number(audioLine.match(/(\d{4,6})\s*Hz/)?.[1] || 48000);
+      const channels = /\bmono\b/i.test(audioLine) ? 1 :
+        /\bstereo\b/i.test(audioLine) ? 2 :
+        Number(audioLine.match(/(\d+)\s*channels?/)?.[1] ||
+          (/\b5\.1\b/.test(audioLine) ? 6 : /\b7\.1\b/.test(audioLine) ? 8 : 2));
+      if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        fail(new Error('FFmpeg could not determine recording duration.'));
+        return;
+      }
+      settled = true;
+      resolve({ durationSeconds, hasAudio: true, hasVideo: Boolean(videoLine),
+        codec, sampleRate, channels });
+    });
+  });
+
   return new Promise((resolve, reject) => {
-    const args = [
-      '-v',
-      'quiet',
-      '-print_format',
-      'json',
-      '-show_format',
-      '-show_streams',
-      filePath,
-    ];
-    const proc = spawn('ffprobe', args);
+    const args = ['-v', 'quiet', '-print_format', 'json',
+      '-show_format', '-show_streams', filePath];
+    const proc = spawn(FFPROBE_BIN, args);
     let stdout = '';
     let stderr = '';
-    proc.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
+    let settled = false;
+    const fallback = () => {
+      if (settled) return;
+      settled = true;
+      void probeWithFfmpeg().then(resolve, reject);
+    };
+    proc.stdout.on('data', chunk => { stdout += chunk.toString(); });
+    proc.stderr.on('data', chunk => { stderr += chunk.toString(); });
+    proc.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT' || error.code === 'EACCES') return fallback();
+      if (settled) return;
+      settled = true;
+      reject(new Error('Could not launch FFprobe: ' + error.message));
     });
-    proc.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-    proc.on('error', (err) => reject(err));
-    proc.on('close', (code) => {
-      if (code !== 0) {
-        return reject(new Error(stderr.trim() || 'Could not inspect media file with ffprobe.'));
-      }
+    proc.on('close', code => {
+      if (settled) return;
+      if (code !== 0) return fallback();
       try {
         const data = JSON.parse(stdout);
         const streams: Array<Record<string, unknown>> = Array.isArray(data.streams) ? data.streams : [];
-        const audioStream = streams.find((s) => s.codec_type === 'audio');
-        const videoStream = streams.find((s) => s.codec_type === 'video');
-        const rawDuration =
-          Number(data.format?.duration) ||
-          Number(audioStream?.duration) ||
-          Number(videoStream?.duration) ||
-          0;
+        const audioStream = streams.find(stream => stream.codec_type === 'audio');
+        const videoStream = streams.find(stream => stream.codec_type === 'video');
+        const rawDuration = Number(data.format?.duration) ||
+          Number(audioStream?.duration) || Number(videoStream?.duration) || 0;
+        settled = true;
         resolve({
           durationSeconds: Number.isFinite(rawDuration) ? rawDuration : 0,
           hasAudio: Boolean(audioStream),
@@ -268,13 +314,12 @@ function probeMediaFile(filePath: string): Promise<ProbeResult> {
           sampleRate: Number(audioStream?.sample_rate) || 48000,
           channels: Number(audioStream?.channels) || 2,
         });
-      } catch (e) {
-        reject(new Error('Failed to parse media stream metadata.'));
+      } catch {
+        fallback();
       }
     });
   });
 }
-
 function extractWaveformPeaks(filePath: string, durationSeconds: number, bins = 220): Promise<number[]> {
   return new Promise((resolve) => {
     // Decode at 4000 Hz mono (2 kHz Nyquist preserves full human voice spectrum) and stream directly into peak bins
@@ -286,7 +331,7 @@ function extractWaveformPeaks(filePath: string, durationSeconds: number, bins = 
     let leftoverByte: number | null = null;
 
     const args = ['-v', 'error', '-i', filePath, '-vn', '-ac', '1', '-ar', String(sampleRate), '-f', 's16le', 'pipe:1'];
-    const proc = spawn('ffmpeg', args);
+    const proc = spawn(FFMPEG_BIN, args);
 
     proc.stdout.on('data', (chunk: Buffer) => {
       let buf = chunk;
@@ -333,7 +378,7 @@ function extractWaveformPeaks(filePath: string, durationSeconds: number, bins = 
 
 function runFfmpegSimple(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn('ffmpeg', args);
+    const proc = spawn(FFMPEG_BIN, args);
     let stderr = '';
     proc.stderr.on('data', (chunk) => {
       stderr += chunk.toString();
@@ -614,7 +659,7 @@ async function extractSpeechSampleForAi(
 
 async function detectLeadingSilenceSec(wavPath: string): Promise<number> {
   return new Promise((resolve) => {
-    const proc = spawn('ffmpeg', [
+    const proc = spawn(FFMPEG_BIN, [
       '-v',
       'info',
       '-i',
@@ -877,7 +922,7 @@ async function processJobAudio(job: InternalJob, settings: ProcessingSettings): 
         cleanedMasterPath,
       ];
 
-      const proc = spawn('ffmpeg', args);
+      const proc = spawn(FFMPEG_BIN, args);
       let stderr = '';
       let progressBuffer = '';
 
@@ -1252,13 +1297,17 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
 
   app.get('/api/health', (_req, res) => {
-    const ffmpeg = spawnSync('ffmpeg', ['-version'], { timeout: 5000, stdio: 'ignore' });
-    const ffprobe = spawnSync('ffprobe', ['-version'], { timeout: 5000, stdio: 'ignore' });
-    const available = ffmpeg.status === 0 && ffprobe.status === 0;
-    res.status(available ? 200 : 503).json({
-      ok: available,
-      ffmpegAvailable: ffmpeg.status === 0,
-      ffprobeAvailable: ffprobe.status === 0,
+    const ffmpeg = spawnSync(FFMPEG_BIN, ['-version'], { timeout: 5000, stdio: 'ignore' });
+    const ffprobe = spawnSync(FFPROBE_BIN, ['-version'], { timeout: 5000, stdio: 'ignore' });
+    const ffmpegAvailable = ffmpeg.status === 0;
+    const ffprobeAvailable = ffprobe.status === 0;
+    // FFprobe is optional. FFmpeg can read input media metadata directly.
+    res.status(ffmpegAvailable ? 200 : 503).json({
+      ok: ffmpegAvailable,
+      ffmpegAvailable,
+      ffprobeAvailable,
+      metadataProbe: ffprobeAvailable ? 'ffprobe' : ffmpegAvailable ? 'ffmpeg-fallback' : 'unavailable',
+      error: ffmpegAvailable ? undefined : 'FFmpeg is not installed. Install FFmpeg or set FFMPEG_PATH.',
       maxDurationSeconds: MAX_DURATION_SECONDS,
     });
   });
@@ -1466,7 +1515,7 @@ async function startServer() {
     if (!fs.existsSync(job.inputFilePath)) {
       return res.status(410).json({ error: 'Original media is missing on the server. Upload the file again.' });
     }
-    const engine = spawnSync('ffmpeg', ['-version'], { timeout: 5000, stdio: 'ignore' });
+    const engine = spawnSync(FFMPEG_BIN, ['-version'], { timeout: 5000, stdio: 'ignore' });
     if (engine.status !== 0) {
       return res.status(503).json({ error: 'Audio processing is unavailable: FFmpeg is not installed on this server.' });
     }
