@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        probe: [native, ffmpeg-fallback]
+        probe: [native, ffmpeg-fallback, packaged]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -33,6 +33,10 @@ jobs:
         run: |
           if [ "${{ matrix.probe }}" = "ffmpeg-fallback" ]; then
             NODE_ENV=production FFPROBE_PATH=/nonexistent/ffprobe bun run start > /tmp/clearcast-server.log 2>&1 &
+          elif [ "${{ matrix.probe }}" = "packaged" ]; then
+            export FFMPEG_PATH="$(node -p "require('@ffmpeg-installer/ffmpeg').path")"
+            export FFPROBE_PATH="$(node -p "require('@ffprobe-installer/ffprobe').path")"
+            NODE_ENV=production bun run start > /tmp/clearcast-server.log 2>&1 &
           else
             NODE_ENV=production bun run start > /tmp/clearcast-server.log 2>&1 &
           fi
