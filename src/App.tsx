@@ -84,6 +84,7 @@ export default function App() {
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const processingRequestsRef = useRef<Set<string>>(new Set());
   const autoSyncedTriggeredRef = useRef<Set<string>>(new Set());
 
   // Initialize Firebase Google Auth listener
@@ -360,24 +361,36 @@ export default function App() {
   };
 
   const handleProcessJob = async (job: AudioJob) => {
+    if (processingRequestsRef.current.has(job.id)) return;
+    processingRequestsRef.current.add(job.id);
     setBannerMessage(null);
+    setSelectedJobId(job.id);
+    // Show immediate feedback. Do not wait for the response or the next poll.
+    setJobs((prev) => prev.map((j) => j.id === job.id
+      ? { ...j, status: 'analyzing', progress: 1, stageLabel: 'Starting audio cleanup', errorMessage: undefined }
+      : j));
     try {
       const res = await fetch(`/api/jobs/${job.id}/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ settings: processingSettings }),
       });
-      const data = (await res.json()) as { job?: AudioJob; error?: string };
+      const contentType = res.headers.get('content-type') || '';
+      const data = contentType.includes('application/json')
+        ? (await res.json()) as { job?: AudioJob; error?: string }
+        : { error: `Audio server returned HTTP ${res.status}. Check deployment and /api/health.` };
       if (!res.ok || !data.job) {
-        throw new Error(data.error || 'Failed to start processing.');
+        throw new Error(data.error || 'Audio server did not start the processing job.');
       }
       setJobs((prev) => prev.map((j) => (j.id === job.id ? data.job! : j)));
-      setSelectedJobId(job.id);
     } catch (err) {
-      setBannerMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Could not process audio file.',
-      });
+      const message = err instanceof Error ? err.message : 'Could not process audio file.';
+      setJobs((prev) => prev.map((j) => j.id === job.id
+        ? { ...j, status: 'error', progress: 0, stageLabel: 'Unable to start', errorMessage: message }
+        : j));
+      setBannerMessage({ type: 'error', text: `Clean failed for ${job.originalName}: ${message}` });
+    } finally {
+      processingRequestsRef.current.delete(job.id);
     }
   };
 
