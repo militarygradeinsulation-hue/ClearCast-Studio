@@ -15,7 +15,7 @@ The Creative Studio frontend cannot execute FFmpeg, RNNoise or Gemini natively. 
 - `CLEARCAST_PROCESSOR_KEY` (on both Creative Studio server and processor): a strong matching secret to protect private media publish operations.
 - `CLEARCAST_STORAGE_HOST` (on the processor, if needed): exact hostname for the private Supabase storage origin when it is not a `.supabase.co` host.
 - `GEMINI_API_KEY` (on processor): necessary for optional AI voice analysis and synthesis. Fast Voice Clean does not use Gemini.
-- `FFMPEG_PATH` / `FFPROBE_PATH` (optional): full paths to media tools. If omitted, the app prefers system tools, then platform binaries from the installed dependencies. If FFprobe is missing, it uses FFmpeg metadata extraction.
+- `FFMPEG_PATH` / `FFPROBE_PATH` (optional): full paths to media tools. The supplied Dockerfile installs FFmpeg and FFprobe with the operating-system package manager. Outside Docker, install FFmpeg on the host; FFprobe is optional because FFmpeg can extract media metadata.
 - `PORT`: listener port, assigned by your hosting provider or 3000 by default.
 - Any Google and Firebase variables required by the existing app should stay on the server.
 
