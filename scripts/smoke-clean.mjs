@@ -22,6 +22,7 @@ async function jsonResponse(res) {
 }
 const health = await jsonResponse(await fetch(origin + '/api/health'));
 assert.equal(health.ffmpegAvailable, true);
+assert.equal(health.maxDurationSeconds, 14400, 'Processor must accept 4-hour recordings');
 assert.ok(health.ffprobeAvailable || health.metadataProbe === 'ffmpeg-fallback', 'No media metadata probe available');
 
 const form = new FormData();
