@@ -128,7 +128,7 @@ export default function App() {
     if (!hasActiveJobs) return;
     const timer = setInterval(() => {
       void fetchJobs();
-    }, 650);
+    }, 1500);
     return () => clearInterval(timer);
   }, [hasActiveJobs]);
 
