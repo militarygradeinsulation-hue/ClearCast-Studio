@@ -1117,12 +1117,12 @@ export default function App() {
                       Broadcast Voice Cleanup &amp; Batch Mastering
                     </h1>
                     <p className="mt-1 text-sm text-slate-600">
-                      Upload video or audio recordings up to 75 minutes, paste a media link, or
+                      Upload video or audio recordings up to 4 hours, paste a media link, or
                       import from Google Drive.
                     </p>
                   </div>
                   <div className="font-mono text-xs tabular-nums text-slate-500">
-                    Max length: 75:00 per file · WAV &amp; MP3 export
+                    Max length: 4:00:00 per file · WAV &amp; MP3 export
                   </div>
                 </div>
 
@@ -1182,8 +1182,8 @@ export default function App() {
                       : 'Drag & drop audio or video files here, or click to browse'}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
-                    Supports MP4, MOV, MKV, WebM, WAV, MP3, M4A, FLAC, OGG, AAC · Up to 75 minutes
-                    (1:15:00) per file
+                    Supports MP4, MOV, MKV, WebM, WAV, MP3, M4A, FLAC, OGG, AAC · Up to 4 hours
+                    (4:00:00) per file
                   </div>
                 </div>
 
