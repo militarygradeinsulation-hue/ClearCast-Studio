@@ -10,6 +10,10 @@ jobs:
   audio-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        probe: [native, ffmpeg-fallback]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -27,13 +31,20 @@ jobs:
         run: bun run build
       - name: Launch processor
         run: |
-          NODE_ENV=production bun run start > /tmp/clearcast-server.log 2>&1 &
+          if [ "${{ matrix.probe }}" = "ffmpeg-fallback" ]; then
+            NODE_ENV=production FFPROBE_PATH=/nonexistent/ffprobe bun run start > /tmp/clearcast-server.log 2>&1 &
+          else
+            NODE_ENV=production bun run start > /tmp/clearcast-server.log 2>&1 &
+          fi
       - name: Verify upload through cleaned export
         run: |
           for i in $(seq 1 40); do
             if curl --fail --silent http://127.0.0.1:3000/api/health >/dev/null; then break; fi
             sleep 1
           done
+          if [ "${{ matrix.probe }}" = "ffmpeg-fallback" ]; then
+            curl --fail --silent http://127.0.0.1:3000/api/health | grep 'ffmpeg-fallback'
+          fi
           node scripts/smoke-clean.mjs
       - name: Print processor logs if failed
         if: failure()
