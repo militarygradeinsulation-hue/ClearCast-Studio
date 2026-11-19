@@ -786,11 +786,6 @@ async function createJobFromDiskFile(params: {
   jobs.set(id, job);
   persistJob(job);
 
-  // If uploaded file is a video or non-native codec, start generating audio preview in background
-  if (!getDirectPlayableAudioMime(job)) {
-    void ensureOriginalPreview(job).catch(() => {});
-  }
-
   return job;
 }
 
@@ -801,11 +796,8 @@ async function processJobAudio(job: InternalJob, settings: ProcessingSettings): 
   job.errorMessage = undefined;
 
   try {
-    // 1. Ensure original preview is ready for non-native containers (native audio streams directly)
-    if (!getDirectPlayableAudioMime(job)) {
-      job.stageLabel = 'Extracting audio track from video';
-      await ensureOriginalPreview(job);
-    }
+    // The original preview is generated on demand by the stream endpoint.
+    // Avoid duplicate transcoding while mastering the audio.
 
     // 1.5 Optional AI Voice Listener: Gemini listens to representative speech samples to tailor EQ & voice clarity
     job.aiVoiceProfileError = undefined;
