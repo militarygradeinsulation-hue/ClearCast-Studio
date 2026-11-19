@@ -5,7 +5,7 @@ import multer from 'multer';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
@@ -347,6 +347,27 @@ function runFfmpegSimple(args: string[]): Promise<string> {
       }
     });
   });
+}
+
+// Compatibility path for hosts that lack RNNoise or optional audio effects.
+// Always keep denoising, speech EQ, compression and measured loudness normalization.
+function buildCompatibleFilterChain(settings: ProcessingSettings): string {
+  const strength = Math.max(0, Math.min(100, settings.noiseReduction));
+  const clarity = Math.max(0, Math.min(100, settings.voiceClarity)) / 100;
+  const level = Math.max(0, Math.min(100, settings.leveling)) / 100;
+  const targetLufs = [-14, -16, -19, -23].includes(settings.targetLufs) ? settings.targetLufs : -16;
+  const filters = ['aresample=48000'];
+  if (settings.highPassHz > 0) filters.push(`highpass=f=${Math.round(settings.highPassHz)}`);
+  if (strength > 0) filters.push(`afftdn=nr=${(6 + strength * 0.13).toFixed(1)}:nf=-38`);
+  if (clarity > 0) {
+    filters.push(`equalizer=f=260:t=q:w=1.2:g=${(-1 - clarity * 2).toFixed(1)}`);
+    filters.push(`equalizer=f=3000:t=q:w=1.1:g=${(1 + clarity * 2.5).toFixed(1)}`);
+  }
+  if (level > 0) {
+    filters.push(`acompressor=threshold=-21dB:ratio=${(1.8 + level * 2).toFixed(1)}:attack=10:release=140`);
+  }
+  filters.push(`loudnorm=I=${targetLufs}:TP=-1.5:LRA=7:print_format=json`);
+  return filters.join(',');
 }
 
 function buildFilterChain(
@@ -794,6 +815,7 @@ async function processJobAudio(job: InternalJob, settings: ProcessingSettings): 
   job.progress = 5;
   job.stageLabel = 'Preparing audio stream';
   job.errorMessage = undefined;
+  persistJob(job);
 
   try {
     // The original preview is generated on demand by the stream endpoint.
@@ -834,7 +856,10 @@ async function processJobAudio(job: InternalJob, settings: ProcessingSettings): 
     );
     const totalUs = Math.max(1, job.durationSeconds * 1_000_000);
 
-    const stderrOutput = await new Promise<string>((resolve, reject) => {
+    let fallbackUsed = false;
+    let stderrOutput: string;
+    try {
+      stderrOutput = await new Promise<string>((resolve, reject) => {
       const args = [
         '-y',
         '-i',
@@ -887,7 +912,26 @@ async function processJobAudio(job: InternalJob, settings: ProcessingSettings): 
           resolve(stderr);
         }
       });
-    });
+      });
+    } catch (primaryErr) {
+      // A missing or unsupported optional FFmpeg filter should never leave Clean broken.
+      fallbackUsed = true;
+      job.status = 'cleaning';
+      job.progress = 20;
+      job.stageLabel = 'Using compatible speech cleanup filters';
+      persistJob(job);
+      try {
+        stderrOutput = await runFfmpegSimple([
+          '-y', '-hide_banner', '-i', job.inputFilePath, '-vn',
+          '-af', buildCompatibleFilterChain(settings),
+          '-ar', '48000', '-c:a', 'pcm_s24le', cleanedMasterPath,
+        ]);
+      } catch (fallbackErr) {
+        const primary = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+        const fallback = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        throw new Error(`Audio engine failed. Primary: ${primary.slice(-320)}. Fallback: ${fallback.slice(-320)}`);
+      }
+    }
 
     job.cleanedMasterPath = cleanedMasterPath;
 
@@ -947,12 +991,13 @@ async function processJobAudio(job: InternalJob, settings: ProcessingSettings): 
     job.processedAt = new Date().toISOString();
     job.progress = 100;
     job.status = 'ready';
-    job.stageLabel = 'Master ready';
+    job.stageLabel = fallbackUsed ? 'Master ready (compatible cleanup)' : 'Master ready';
     persistJob(job);
   } catch (err) {
     job.status = 'error';
     job.stageLabel = 'Processing failed';
     job.errorMessage = err instanceof Error ? err.message : 'Unexpected audio processing error';
+    console.error(`[ClearCast] Job ${job.id} failed:`, job.errorMessage);
     persistJob(job);
   }
 }
@@ -1207,7 +1252,15 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, maxDurationSeconds: MAX_DURATION_SECONDS });
+    const ffmpeg = spawnSync('ffmpeg', ['-version'], { timeout: 5000, stdio: 'ignore' });
+    const ffprobe = spawnSync('ffprobe', ['-version'], { timeout: 5000, stdio: 'ignore' });
+    const available = ffmpeg.status === 0 && ffprobe.status === 0;
+    res.status(available ? 200 : 503).json({
+      ok: available,
+      ffmpegAvailable: ffmpeg.status === 0,
+      ffprobeAvailable: ffprobe.status === 0,
+      maxDurationSeconds: MAX_DURATION_SECONDS,
+    });
   });
 
   app.get('/api/jobs', (_req, res) => {
@@ -1408,6 +1461,14 @@ async function startServer() {
 
     if (job.status === 'analyzing' || job.status === 'cleaning' || job.status === 'normalizing') {
       return res.status(409).json({ error: 'Job is already processing.' });
+    }
+
+    if (!fs.existsSync(job.inputFilePath)) {
+      return res.status(410).json({ error: 'Original media is missing on the server. Upload the file again.' });
+    }
+    const engine = spawnSync('ffmpeg', ['-version'], { timeout: 5000, stdio: 'ignore' });
+    if (engine.status !== 0) {
+      return res.status(503).json({ error: 'Audio processing is unavailable: FFmpeg is not installed on this server.' });
     }
 
     const body = req.body?.settings || {};
