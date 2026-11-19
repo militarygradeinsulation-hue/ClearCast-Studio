@@ -161,6 +161,33 @@ export interface DriveMediaFile {
 
 export const BUILT_IN_PRESETS: AudioPreset[] = [
   {
+    id: 'fast-voice-clean',
+    name: 'Fast Voice Clean',
+    description:
+      'Quick voice cleanup without cloud AI analysis. Neural noise isolation, clear speech EQ and consistent -16 LUFS loudness.',
+    processing: {
+      presetId: 'fast-voice-clean',
+      presetName: 'Fast Voice Clean',
+      noiseReduction: 58,
+      voiceClarity: 65,
+      voicePresenceLayer: 38,
+      leveling: 65,
+      targetLufs: -16,
+      highPassHz: 80,
+      neuralDenoise: true,
+      aiVoiceListener: false,
+      deEsser: true,
+      deClick: false,
+    },
+    export: {
+      format: 'mp3',
+      mp3Bitrate: 192,
+      wavBitDepth: 24,
+      sampleRate: 48000,
+      channels: 'original',
+    },
+  },
+  {
     id: 'podcast-broadcast',
     name: 'Podcast Voice',
     description:
