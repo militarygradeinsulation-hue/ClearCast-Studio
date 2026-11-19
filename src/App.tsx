@@ -378,7 +378,7 @@ export default function App() {
       const contentType = res.headers.get('content-type') || '';
       const data = contentType.includes('application/json')
         ? (await res.json()) as { job?: AudioJob; error?: string }
-        : { error: `Audio server returned HTTP ${res.status}. Check deployment and /api/health.` };
+        : { job: undefined, error: `Audio server returned HTTP ${res.status}. Check deployment and /api/health.` };
       if (!res.ok || !data.job) {
         throw new Error(data.error || 'Audio server did not start the processing job.');
       }
