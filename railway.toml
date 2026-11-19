@@ -1,0 +1,12 @@
+# ClearCast audio processor; deploy from GitHub using Railway's Docker builder.
+# One replica keeps local job IDs and media files on the same instance.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+numReplicas = 1
