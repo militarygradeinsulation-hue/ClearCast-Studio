@@ -35,3 +35,14 @@ This repository has GitHub Actions coverage for TypeScript, production build and
 ## Verify a deployment actually has working audio
 
 Visit `<processor-origin>/api/health`. A functional backend reports `ffmpegAvailable: true` and `ok: true`. If FFprobe is missing, `metadataProbe` should be `ffmpeg-fallback`; that is supported. Then upload a real test recording and press Clean. If the host cannot execute FFmpeg, point the studio to a deployed Docker processor, not its own UI origin.
+
+## Railway deployment for ClearCast Creative Studio
+
+1. Connect your Railway account and create a service from `militarygradeinsulation-hue/ClearCast-Studio`, using the Dockerfile in this repo. `railway.toml` configures a single instance and `/api/health` checks.
+2. Set `CLEARCAST_PROCESSOR_KEY` in Railway to a strong random value. Also set `GEMINI_API_KEY` only if you need optional AI voice analysis. The FFmpeg voice-cleaning preset works without Gemini.
+3. In the **Lovable server environment** for `militarygradeinsulation-hue/clearcast-creative-studio`, set `CLEARCAST_PROCESSOR_URL=https://<your-service-domain>` and the **same** `CLEARCAST_PROCESSOR_KEY`. These are server secrets, never browser variables and never GitHub files.
+4. Verify `/api/health` contains `ok:true` and `ffmpegAvailable:true`. Upload a short test recording from the Creative Studio, press Clean, confirm it reaches Ready and plays back, and then test a recording longer than 10 minutes.
+
+If a private Supabase Storage domain differs from `.supabase.co`, set `CLEARCAST_STORAGE_HOST` to its exact hostname on Railway before publishing cleaned files to storage. For jobs up to 75 minutes, allocate enough CPU, RAM, storage, and request time; avoid multiple replicas until job media is moved to durable shared storage.
+
+The hosted processor should not be public without access controls. `CLEARCAST_PROCESSOR_KEY` protects all non-health API endpoints when configured; production administrators must set it.
