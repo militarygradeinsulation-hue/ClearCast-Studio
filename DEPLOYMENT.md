@@ -43,6 +43,6 @@ Visit `<processor-origin>/api/health`. A functional backend reports `ffmpegAvail
 3. In the **Lovable server environment** for `militarygradeinsulation-hue/clearcast-creative-studio`, set `CLEARCAST_PROCESSOR_URL=https://<your-service-domain>` and the **same** `CLEARCAST_PROCESSOR_KEY`. These are server secrets, never browser variables and never GitHub files.
 4. Verify `/api/health` contains `ok:true` and `ffmpegAvailable:true`. Upload a short test recording from the Creative Studio, press Clean, confirm it reaches Ready and plays back, and then test a recording longer than 10 minutes.
 
-If a private Supabase Storage domain differs from `.supabase.co`, set `CLEARCAST_STORAGE_HOST` to its exact hostname on Railway before publishing cleaned files to storage. For jobs up to 75 minutes, allocate enough CPU, RAM, storage, and request time; avoid multiple replicas until job media is moved to durable shared storage.
+If a private Supabase Storage domain differs from `.supabase.co`, set `CLEARCAST_STORAGE_HOST` to its exact hostname on Railway before publishing cleaned files to storage. For jobs up to 4 hours, allocate enough CPU, RAM, storage, and request time; avoid multiple replicas until job media is moved to durable shared storage.
 
 The hosted processor should not be public without access controls. `CLEARCAST_PROCESSOR_KEY` protects all non-health API endpoints when configured; production administrators must set it.
