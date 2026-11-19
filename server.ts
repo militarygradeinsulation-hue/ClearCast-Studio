@@ -20,7 +20,7 @@ import {
 } from './src/server/geminiAudio.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
-const MAX_DURATION_SECONDS = 4500; // 75 minutes hard limit
+const MAX_DURATION_SECONDS = 14400; // 4 hours per recording
 const MAX_UPLOAD_BYTES = 3.5 * 1024 * 1024 * 1024; // 3.5 GB (exact integer) for 75m video/WAV
 const WORK_DIR = path.resolve('/tmp/clearcast-studio');
 const UPLOAD_DIR = path.join(WORK_DIR, 'uploads');
@@ -831,7 +831,7 @@ async function createJobFromDiskFile(params: {
   if (probe.durationSeconds > MAX_DURATION_SECONDS) {
     fs.rmSync(params.filePath, { force: true });
     const mins = Math.round(probe.durationSeconds / 60);
-    throw new Error(`"${params.originalName}" is ${mins} minutes long, exceeding the 75-minute limit.`);
+    throw new Error(`"${params.originalName}" is ${mins} minutes long, exceeding the 4-hour (240-minute) limit.`);
   }
 
   const id = crypto.randomUUID();
