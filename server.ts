@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { createRequire } from 'node:module';
 import {
   listenAndProfileVoice,
   listenAndTranscribeSegment,
@@ -18,7 +19,7 @@ import {
   type AiVoiceProfile,
 } from './src/server/geminiAudio.ts';
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const MAX_DURATION_SECONDS = 4500; // 75 minutes hard limit
 const MAX_UPLOAD_BYTES = 3.5 * 1024 * 1024 * 1024; // 3.5 GB (exact integer) for 75m video/WAV
 const WORK_DIR = path.resolve('/tmp/clearcast-studio');
@@ -31,8 +32,23 @@ fs.mkdirSync(JOBS_DIR, { recursive: true });
 const MODELS_DIR = path.resolve(process.cwd(), 'models');
 const RNNOISE_SH_MODEL = path.join(MODELS_DIR, 'rnnoise_sh.rnnn');
 const RNNOISE_CB_MODEL = path.join(MODELS_DIR, 'rnnoise_cb.rnnn');
-const FFMPEG_BIN = process.env.FFMPEG_PATH || 'ffmpeg';
-const FFPROBE_BIN = process.env.FFPROBE_PATH || 'ffprobe';
+const loadNativePackage = createRequire(import.meta.url);
+function mediaExecutable(setting: 'FFMPEG_PATH' | 'FFPROBE_PATH', systemName: string, packageName: string): string {
+  // An explicit administrator override always takes priority.
+  const configured = process.env[setting];
+  if (configured) return configured;
+  // Prefer the system executable for current security patches and newer filters.
+  const system = spawnSync(systemName, ['-version'], { timeout: 5000, stdio: 'ignore' });
+  if (system.status === 0) return systemName;
+  // App hosts often do not install OS packages: use the packaged platform binary.
+  try {
+    const installer = loadNativePackage(packageName) as { path?: string };
+    if (installer.path && fs.existsSync(installer.path)) return installer.path;
+  } catch { /* Optional package may be unavailable in development. */ }
+  return systemName;
+}
+const FFMPEG_BIN = mediaExecutable('FFMPEG_PATH', 'ffmpeg', '@ffmpeg-installer/ffmpeg');
+const FFPROBE_BIN = mediaExecutable('FFPROBE_PATH', 'ffprobe', '@ffprobe-installer/ffprobe');
 
 type AiVoiceBlendMode = 'clarity-blend' | 'balanced-hybrid' | 'full-revoice';
 
