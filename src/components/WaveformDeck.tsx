@@ -368,6 +368,18 @@ export function WaveformDeck({
         }}
       />
 
+      {job.status === 'error' && (
+        <div role="alert" className="flex items-start gap-3 border-b border-red-800 bg-red-950/60 px-6 py-3 text-sm text-red-100">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+          <div className="min-w-0">
+            <strong className="block">Audio cleanup failed</strong>
+            <span className="break-words text-xs text-red-200">
+              {job.errorMessage || 'The audio engine stopped before it could finish. Check the server health and retry.'}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Deck Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800/80 px-6 py-4">
         <div className="min-w-0">
