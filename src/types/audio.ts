@@ -297,4 +297,4 @@ export const BUILT_IN_PRESETS: AudioPreset[] = [
   },
 ];
 
-export const MAX_DURATION_SECONDS = 4500; // 75 minutes max
+export const MAX_DURATION_SECONDS = 14400; // 4 hours maximum
